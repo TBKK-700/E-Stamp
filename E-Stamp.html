@@ -1,0 +1,345 @@
+import React, { useState } from 'react';
+ 
+// URL Google Apps Script ของคุณ
+const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwBBhYSWZuVZBI2gh7vPJrFV-RJEtehlwDv1Qsj_eHdz2z1H8ShcDR6FOOG5XMpOHHA/exec%22;
+ 
+export default function App() {
+  const [user, setUser] = useState<{ empId: string; name: string; department: string; phase: string } | null>(null);
+  const [empId, setEmpId] = useState('');
+  const [name, setName] = useState('');
+  const [department, setDepartment] = useState('');
+  const [phase, setPhase] = useState('เฟส 10');
+  const [points, setPoints] = useState(0);
+  const [logs, setLogs] = useState<string[]>([]);
+  const [loading, setLoading] = useState(false);
+ 
+  const handleLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (empId && name && department && phase) {
+      setUser({ empId, name, department, phase });
+    }
+  };
+ 
+  const handleSimulateScan = async (baseId: string, baseName: string, actionType: string, actionLabel: string, earnedPoints: number) => {
+    if (!user || loading) return;
+    const key = `${baseId}-${actionType}`;
+    
+    if (logs.includes(key)) {
+      alert('⚠️ คุณเคยรับแต้มจากกิจกรรมนี้ไปแล้ว!');
+      return;
+    }
+ 
+    setLoading(true);
+ 
+    try {
+      await fetch(GOOGLE_SCRIPT_URL, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          empId: user.empId,
+          name: user.name,
+          department: user.department,
+          phase: user.phase,
+          baseName: baseName,
+          actionLabel: actionLabel,
+          points: earnedPoints
+        })
+      });
+ 
+      setPoints(prev => prev + earnedPoints);
+      setLogs(prev => [...prev, key]);
+      alert(`🎉 บันทึกสำเร็จ! ได้รับ ${earnedPoints} แต้ม (บันทึกลง Google Sheets เรียบร้อย)`);
+    } catch (error) {
+      alert('เกิดข้อผิดพลาดในการบันทึกข้อมูล');
+    } finally {
+      setLoading(false);
+    }
+  };
+ 
+  if (!user) {
+    return (
+      <div style={styles.pageBackground}>
+        <div style={styles.loginCard}>
+          {/* Header ธีม Safety & Environment Week */}
+          <div style={styles.headerBanner}>
+            <div style={{ fontSize: '36px', marginBottom: '4px' }}>🌱 🛡️</div>
+            <span style={styles.tagline}>GREEN & SAFETY CULTURE</span>
+            <h2 style={styles.mainTitle}>Safety & Environment<br/>Week 2026</h2>
+            <p style={styles.subTitle}>ร่วมสนุกตอบคำถามเข้าฐาน แลกรับแต้มสะสมรางวัล</p>
+          </div>
+ 
+          {/* ฟอร์มเข้าสู่ระบบ */}
+          <form onSubmit={handleLogin} style={styles.form}>
+            <div style={styles.inputGroup}>
+              <label style={styles.label}>👤 รหัสพนักงาน</label>
+              <input 
+                type="text" 
+                placeholder="กรอกรหัสพนักงาน" 
+                value={empId} 
+                onChange={(e) => setEmpId(e.target.value)} 
+                required 
+                style={styles.input} 
+              />
+            </div>
+ 
+            <div style={styles.inputGroup}>
+              <label style={styles.label}>📝 ชื่อ - นามสกุล</label>
+              <input 
+                type="text" 
+                placeholder="กรอกชื่อ-นามสกุล" 
+                value={name} 
+                onChange={(e) => setName(e.target.value)} 
+                required 
+                style={styles.input} 
+              />
+            </div>
+ 
+            <div style={styles.inputGroup}>
+              <label style={styles.label}>🏢 แผนก</label>
+              <input 
+                type="text" 
+                placeholder="กรอกสังกัดแผนก (เช่น EHS, QA, Prod)" 
+                value={department} 
+                onChange={(e) => setDepartment(e.target.value)} 
+                required 
+                style={styles.input} 
+              />
+            </div>
+            
+            <div style={styles.inputGroup}>
+              <label style={styles.label}>📍 เฟสปฏิบัติงาน</label>
+              <select 
+                value={phase} 
+                onChange={(e) => setPhase(e.target.value)} 
+                style={styles.select}
+              >
+                <option value="เฟส 10">เฟส 10</option>
+                <option value="เฟส 8">เฟส 8</option>
+              </select>
+            </div>
+ 
+            <button type="submit" style={styles.submitBtn}>
+              🚀 เข้าสู่ระบบสะสมแต้ม
+            </button>
+          </form>
+ 
+          <div style={styles.footerNote}>
+            🍃 Safety First & Zero Waste Journey ♻️
+          </div>
+        </div>
+      </div>
+    );
+  }
+ 
+  return (
+    <div style={styles.pageBackground}>
+      <div style={styles.appContainer}>
+        {/* การ์ดข้อมูลผู้ใช้ */}
+        <div style={styles.userCard}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <h3 style={{ margin: '0 0 4px 0', fontSize: '18px' }}>👤 {user.name}</h3>
+              <p style={{ margin: 0, fontSize: '12px', opacity: 0.9 }}>
+                รหัส: {user.empId} | แผนก: {user.department} ({user.phase})
+              </p>
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              <span style={styles.pointBadge}>⭐ {points} แต้ม</span>
+            </div>
+          </div>
+        </div>
+ 
+        <h4 style={{ textAlign: 'left', margin: '20px 0 10px 0', color: '#1e293b' }}>
+          📱 สแกนสะสมแต้มหน้าฐานกิจกรรม
+        </h4>
+        
+        {loading && <p style={{ color: '#d97706', fontWeight: 'bold' }}>⏳ กำลังบันทึกข้อมูลลง Google Sheets...</p>}
+ 
+        {/* รายการฐานกิจกรรม */}
+        <div style={styles.baseCard}>
+          <b style={{ color: '#0369a1' }}>🎮 ฐานที่ 1: เกมทดสอบทักษะความปลอดภัย</b>
+          <div style={styles.btnGroup}>
+            <button disabled={loading} onClick={() => handleSimulateScan('base1', 'ฐานที่ 1', 'CHECKIN', 'เข้าร่วมฐาน', 3)} style={{ ...styles.scanBtn, backgroundColor: '#0288d1' }}>[สแกน] เข้าร่วมฐาน (+3 แต้ม)</button>
+            <button disabled={loading} onClick={() => handleSimulateScan('base1', 'ฐานที่ 1', 'WIN', 'ชนะเกม', 10)} style={{ ...styles.scanBtn, backgroundColor: '#ea580c' }}>[สแกน] ชนะเกม (+10 แต้ม)</button>
+          </div>
+        </div>
+ 
+        <div style={styles.baseCard}>
+          <b style={{ color: '#0369a1' }}>❓ ฐานตอบคำถามสิ่งแวดล้อม & คาร์บอน</b>
+          <div style={styles.btnGroup}>
+            <button disabled={loading} onClick={() => handleSimulateScan('base_quiz', 'ฐานตอบคำถาม', 'CHECKIN', 'เข้าร่วมฐาน', 3)} style={{ ...styles.scanBtn, backgroundColor: '#0288d1' }}>[สแกน] เข้าร่วมฐาน (+3 แต้ม)</button>
+            <button disabled={loading} onClick={() => handleSimulateScan('base_quiz', 'ฐานตอบคำถาม', 'WIN', 'ตอบถูก', 10)} style={{ ...styles.scanBtn, backgroundColor: '#ea580c' }}>[สแกน] ตอบคำถามถูกต้อง (+10 แต้ม)</button>
+          </div>
+        </div>
+ 
+        <div style={styles.baseCard}>
+          <b style={{ color: '#0369a1' }}>🎯 ฐานแยกขยะให้ถูกประเภท</b>
+          <div style={styles.btnGroup}>
+            <button disabled={loading} onClick={() => handleSimulateScan('base_select', 'ฐานเลือกให้ถูก', 'CHECKIN', 'เข้าร่วมฐาน', 3)} style={{ ...styles.scanBtn, backgroundColor: '#0288d1' }}>[สแกน] เข้าร่วมฐาน (+3 แต้ม)</button>
+            <button disabled={loading} onClick={() => handleSimulateScan('base_select', 'ฐานเลือกให้ถูก', 'WIN', 'เลือกถูกทุกข้อ', 10)} style={{ ...styles.scanBtn, backgroundColor: '#ea580c' }}>[สแกน] เลือกถูกทุกข้อ (+10 แต้ม)</button>
+          </div>
+        </div>
+ 
+        <div style={{ ...styles.baseCard, borderColor: '#16a34a', backgroundColor: '#f0fdf4' }}>
+          <b style={{ color: '#15803d' }}>🌱 รับชมการประกวด "โอ้โหคาร์บอน ลดอย่างไร"</b>
+          <div style={styles.btnGroup}>
+            <button disabled={loading} onClick={() => handleSimulateScan('event_carbon', 'ประกวดโอ้โหคาร์บอน', 'JOIN', 'เข้าร่วมรับชม', 5)} style={{ ...styles.scanBtn, backgroundColor: '#16a34a' }}>[สแกน] เข้าร่วมรับชม (+5 แต้ม)</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+ 
+const styles: { [key: string]: React.CSSProperties } = {
+  pageBackground: {
+    minHeight: '100vh',
+    background: 'linear-gradient(135deg, #e0f2fe 0%, #dcfce7 100%)',
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: '15px',
+    fontFamily: "'Prompt', 'Sukhumvit Set', sans-serif"
+  },
+  loginCard: {
+    background: '#ffffff',
+    width: '100%',
+    maxWidth: '380px',
+    borderRadius: '20px',
+    padding: '24px 20px',
+    boxShadow: '0 10px 25px rgba(16, 185, 129, 0.15)',
+    border: '1px solid #bbf7d0'
+  },
+  appContainer: {
+    background: '#ffffff',
+    width: '100%',
+    maxWidth: '400px',
+    borderRadius: '20px',
+    padding: '20px',
+    boxShadow: '0 10px 25px rgba(0,0,0,0.08)'
+  },
+  headerBanner: {
+    textAlign: 'center',
+    marginBottom: '20px',
+    background: 'linear-gradient(135deg, #059669 0%, #0284c7 100%)',
+    borderRadius: '16px',
+    padding: '20px 15px',
+    color: '#ffffff'
+  },
+  tagline: {
+    fontSize: '10px',
+    fontWeight: 'bold',
+    letterSpacing: '1.5px',
+    background: 'rgba(255, 255, 255, 0.2)',
+    padding: '3px 8px',
+    borderRadius: '10px',
+    display: 'inline-block',
+    marginBottom: '8px'
+  },
+  mainTitle: {
+    margin: '4px 0',
+    fontSize: '20px',
+    fontWeight: 'bold',
+    lineHeight: '1.3'
+  },
+  subTitle: {
+    margin: '6px 0 0 0',
+    fontSize: '12px',
+    opacity: 0.9
+  },
+  form: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '14px'
+  },
+  inputGroup: {
+    textAlign: 'left'
+  },
+  label: {
+    fontSize: '13px',
+    fontWeight: 'bold',
+    color: '#334155',
+    display: 'block',
+    marginBottom: '5px'
+  },
+  input: {
+    width: '100%',
+    padding: '12px',
+    fontSize: '15px',
+    borderRadius: '10px',
+    border: '1px solid #cbd5e1',
+    boxSizing: 'border-box',
+    outline: 'none',
+    backgroundColor: '#f8fafc'
+  },
+  select: {
+    width: '100%',
+    padding: '12px',
+    fontSize: '15px',
+    borderRadius: '10px',
+    border: '1px solid #cbd5e1',
+    boxSizing: 'border-box',
+    backgroundColor: '#f8fafc',
+    outline: 'none'
+  },
+  submitBtn: {
+    marginTop: '6px',
+    padding: '14px',
+    fontSize: '16px',
+    fontWeight: 'bold',
+    color: '#ffffff',
+    background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+    border: 'none',
+    borderRadius: '12px',
+    cursor: 'pointer',
+    boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)'
+  },
+  footerNote: {
+    marginTop: '18px',
+    fontSize: '11px',
+    color: '#64748b',
+    textAlign: 'center',
+    fontWeight: '500'
+  },
+  userCard: {
+    background: 'linear-gradient(135deg, #059669 0%, #0284c7 100%)',
+    color: '#ffffff',
+    padding: '16px',
+    borderRadius: '14px',
+    boxShadow: '0 4px 12px rgba(5, 150, 105, 0.2)'
+  },
+  pointBadge: {
+    background: '#fef08a',
+    color: '#854d0e',
+    padding: '6px 12px',
+    borderRadius: '20px',
+    fontSize: '14px',
+    fontWeight: 'bold'
+  },
+  baseCard: {
+    border: '1px solid #e2e8f0',
+    padding: '15px',
+    borderRadius: '12px',
+    textAlign: 'left',
+    marginBottom: '12px',
+    backgroundColor: '#ffffff',
+    boxShadow: '0 2px 6px rgba(0,0,0,0.03)'
+  },
+  btnGroup: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+    marginTop: '10px'
+  },
+  scanBtn: {
+    padding: '11px',
+    color: '#fff',
+    border: 'none',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    fontWeight: 'bold',
+    fontSize: '13px'
+  }
+};
+ 
