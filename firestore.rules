@@ -50,5 +50,22 @@ service cloud.firestore {
                     && request.resource.data.expiresAt <= request.time + duration.value(90, "s");
       allow update, delete: if isAdmin();
     }
+
+    match /system/grandPrizeCounter {
+      allow read: if signedIn();
+      allow create: if signedIn()
+                    && request.resource.data.nextNumber == 2
+                    && request.resource.data.lastIssuedNumber == 1
+                    && request.resource.data.lastIssuedCode == "SHE26-0001"
+                    && request.resource.data.lastIssuedTo == request.auth.uid
+                    && getAfter(/databases/$(database)/documents/participants/$(request.auth.uid)).data.state.grandCode == "SHE26-0001";
+      allow update: if signedIn()
+                    && request.resource.data.nextNumber == resource.data.nextNumber + 1
+                    && request.resource.data.lastIssuedNumber == resource.data.nextNumber
+                    && request.resource.data.lastIssuedTo == request.auth.uid
+                    && request.resource.data.lastIssuedCode is string
+                    && getAfter(/databases/$(database)/documents/participants/$(request.auth.uid)).data.state.grandCode == request.resource.data.lastIssuedCode;
+      allow delete: if isSuperAdmin();
+    }
   }
 }
