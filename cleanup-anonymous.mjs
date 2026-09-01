@@ -1,8 +1,22 @@
-import { applicationDefault, initializeApp } from 'firebase-admin/app';
+import { execFileSync } from 'node:child_process';
+import { initializeApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 
+const cloudShellCredential = {
+  async getAccessToken() {
+    const accessToken = execFileSync(
+      'gcloud',
+      ['auth', 'print-access-token'],
+      { encoding: 'utf8' },
+    ).trim();
+
+    if (!accessToken) throw new Error('Cloud Shell ไม่สามารถออก access token ได้');
+    return { access_token: accessToken, expires_in: 3600 };
+  },
+};
+
 initializeApp({
-  credential: applicationDefault(),
+  credential: cloudShellCredential,
   projectId: 'e-stamp-bc529',
 });
 
