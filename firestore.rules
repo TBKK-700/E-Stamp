@@ -19,11 +19,28 @@ service cloud.firestore {
     }
 
     match /participants/{userId} {
-      allow create: if signedIn() && request.auth.uid == userId;
+      allow create: if signedIn()
+                    && request.auth.uid == userId
+                    && request.resource.data.state.coupons.size() == 0;
       allow read: if signedIn()
                   && (request.auth.uid == userId || isAdmin());
       allow update: if signedIn()
-                    && (request.auth.uid == userId || isSuperAdmin());
+                    && (
+                      isAdmin()
+                      || (
+                        request.auth.uid == userId
+                        && (
+                          request.resource.data.state.coupons == resource.data.state.coupons
+                          || (
+                            request.resource.data.state.coupons.size() == resource.data.state.coupons.size() + 1
+                            && request.resource.data.state.coupons[request.resource.data.state.coupons.size() - 1].used == false
+                            && getAfter(/databases/$(database)/documents/system/couponInventory).data.lastIssuedTo == request.auth.uid
+                            && getAfter(/databases/$(database)/documents/system/couponInventory).data.lastCouponCode
+                               == request.resource.data.state.coupons[request.resource.data.state.coupons.size() - 1].code
+                          )
+                        )
+                      )
+                    );
       allow delete: if isSuperAdmin();
     }
 
@@ -65,6 +82,40 @@ service cloud.firestore {
                     && request.resource.data.lastIssuedTo == request.auth.uid
                     && request.resource.data.lastIssuedCode is string
                     && getAfter(/databases/$(database)/documents/participants/$(request.auth.uid)).data.state.grandCode == request.resource.data.lastIssuedCode;
+      allow delete: if isSuperAdmin();
+    }
+
+    match /system/couponInventory {
+      allow read: if signedIn();
+      allow create: if (
+                      isAdmin()
+                      && request.resource.data.inventoryInitialized == true
+                      && request.resource.data.foodRemaining >= 0
+                      && request.resource.data.foodRemaining <= 500
+                      && request.resource.data.coffeeRemaining >= 0
+                      && request.resource.data.coffeeRemaining <= 50
+                      && request.resource.data.nextCouponNumber >= 1
+                    )
+                    || (
+                      signedIn()
+                      && request.resource.data.nextCouponNumber == 2
+                      && request.resource.data.foodRemaining >= 0
+                      && request.resource.data.coffeeRemaining >= 0
+                      && request.resource.data.foodRemaining + request.resource.data.coffeeRemaining == 549
+                      && request.resource.data.lastCouponCode == "CP-0001"
+                      && request.resource.data.lastIssuedTo == request.auth.uid
+                      && getAfter(/databases/$(database)/documents/participants/$(request.auth.uid)).data.state.coupons.size()
+                         == get(/databases/$(database)/documents/participants/$(request.auth.uid)).data.state.coupons.size() + 1
+                    );
+      allow update: if signedIn()
+                    && request.resource.data.nextCouponNumber == resource.data.nextCouponNumber + 1
+                    && request.resource.data.foodRemaining >= 0
+                    && request.resource.data.coffeeRemaining >= 0
+                    && request.resource.data.foodRemaining + request.resource.data.coffeeRemaining
+                       == resource.data.foodRemaining + resource.data.coffeeRemaining - 1
+                    && request.resource.data.lastIssuedTo == request.auth.uid
+                    && getAfter(/databases/$(database)/documents/participants/$(request.auth.uid)).data.state.coupons.size()
+                       == get(/databases/$(database)/documents/participants/$(request.auth.uid)).data.state.coupons.size() + 1;
       allow delete: if isSuperAdmin();
     }
   }
