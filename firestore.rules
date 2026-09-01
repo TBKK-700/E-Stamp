@@ -1,0 +1,54 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+        && get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.active == true;
+    }
+
+    function isSuperAdmin() {
+      return isAdmin()
+        && get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.role == "superadmin";
+    }
+
+    match /participants/{userId} {
+      allow create: if signedIn() && request.auth.uid == userId;
+      allow read: if signedIn()
+                  && (request.auth.uid == userId || isAdmin());
+      allow update: if signedIn()
+                    && (request.auth.uid == userId || isSuperAdmin());
+      allow delete: if isSuperAdmin();
+    }
+
+    match /admins/{adminId} {
+      allow read: if signedIn()
+                  && (request.auth.uid == adminId || isSuperAdmin());
+      allow create, update, delete: if isSuperAdmin();
+    }
+
+    match /qrTokens/{tokenId} {
+      allow get: if signedIn();
+      allow list: if isAdmin();
+      allow create: if isAdmin()
+                    && request.resource.data.createdBy == request.auth.uid
+                    && request.resource.data.active == true
+                    && request.resource.data.action in [
+                      "join:risk", "win:risk",
+                      "join:kahoot", "win:kahoot",
+                      "join:bingo", "win:bingo",
+                      "join:carbon", "join:supplier"
+                    ]
+                    && request.resource.data.expiresAt is timestamp
+                    && request.resource.data.expiresAt > request.time
+                    && request.resource.data.expiresAt <= request.time + duration.value(90, "s");
+      allow update, delete: if isAdmin();
+    }
+  }
+}
