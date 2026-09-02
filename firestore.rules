@@ -113,9 +113,22 @@ service cloud.firestore {
                     && request.resource.data.coffeeRemaining >= 0
                     && request.resource.data.foodRemaining + request.resource.data.coffeeRemaining
                        == resource.data.foodRemaining + resource.data.coffeeRemaining - 1
-                    && request.resource.data.lastIssuedTo == request.auth.uid
-                    && getAfter(/databases/$(database)/documents/participants/$(request.auth.uid)).data.state.coupons.size()
-                       == get(/databases/$(database)/documents/participants/$(request.auth.uid)).data.state.coupons.size() + 1;
+                    && (
+                      (
+                        request.resource.data.lastIssuedTo == request.auth.uid
+                        && getAfter(/databases/$(database)/documents/participants/$(request.auth.uid)).data.state.coupons.size()
+                           == get(/databases/$(database)/documents/participants/$(request.auth.uid)).data.state.coupons.size() + 1
+                      )
+                      || (
+                        isAdmin()
+                        && request.resource.data.lastIssuedTo is string
+                        && getAfter(/databases/$(database)/documents/participants/$(request.resource.data.lastIssuedTo)).data.state.coupons.size()
+                           == get(/databases/$(database)/documents/participants/$(request.resource.data.lastIssuedTo)).data.state.coupons.size() + 1
+                        && getAfter(/databases/$(database)/documents/participants/$(request.resource.data.lastIssuedTo)).data.state.coupons[
+                             getAfter(/databases/$(database)/documents/participants/$(request.resource.data.lastIssuedTo)).data.state.coupons.size() - 1
+                           ].code == request.resource.data.lastCouponCode
+                      )
+                    );
       allow delete: if isSuperAdmin();
     }
   }
