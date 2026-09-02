@@ -1,17 +1,9 @@
-import { execFileSync } from 'node:child_process';
 import { initializeApp } from 'firebase-admin/app';
 import { getFirestore, Timestamp } from 'firebase-admin/firestore';
 
 const activityPoints = { risk: 5, kahoot: 5, bingo: 5, carbon: 20, supplier: 5 };
 
-const credential = {
-  async getAccessToken() {
-    const accessToken = execFileSync('gcloud', ['auth', 'print-access-token'], { encoding: 'utf8' }).trim();
-    return { access_token: accessToken, expires_in: 3600 };
-  },
-};
-
-initializeApp({ credential, projectId: 'e-stamp-bc529' });
+initializeApp({ projectId: 'e-stamp-bc529' });
 const db = getFirestore();
 
 function bangkokDateKey(value) {
