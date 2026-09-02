@@ -60,7 +60,7 @@ service cloud.firestore {
                       "join:risk", "win:risk",
                       "join:kahoot", "win:kahoot",
                       "join:bingo", "win:bingo",
-                      "join:carbon", "join:supplier"
+                      "join:carbon"
                     ]
                     && request.resource.data.expiresAt is timestamp
                     && request.resource.data.expiresAt > request.time

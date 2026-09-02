@@ -225,6 +225,14 @@ const auth=firebase.auth(),db=firebase.firestore(),serverTimestamp=firebase.fire
 let adminUser=null,selectedPlayer=null;
 
 function normalizedEmployeeId(value){return String(value||'').trim().toUpperCase().replace(/[^A-Z0-9]/g,'')}
+function bangkokDateKey(value=new Date()){
+    const parts=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Bangkok',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date(value));
+    const get=type=>parts.find(part=>part.type===type)?.value||'';
+    return `${get('year')}-${get('month')}-${get('day')}`;
+}
+function completedOnBangkokDate(history,type,activityId,dateKey=bangkokDateKey()){
+    return history.some(entry=>entry?.type===type&&entry?.activityId===activityId&&bangkokDateKey(entry.scannedAt)===dateKey);
+}
 function setPlayerMessage(message,type=''){const el=document.getElementById('player-message');el.textContent=message;el.className=`player-message ${type}`.trim()}
 
 auth.onAuthStateChanged(async user=>{
@@ -259,8 +267,9 @@ async function recordParticipation(){
     await db.runTransaction(async transaction=>{
         const snap=await transaction.get(ref);if(!snap.exists)throw new Error('participant-not-found');
         const data=snap.data()||{},state=data.state||{},joined=Array.isArray(state.joined)?state.joined:[],history=Array.isArray(state.scanHistory)?state.scanHistory:[];
+        if(completedOnBangkokDate(history,'join','risk'))throw new Error('already-played-today');
         const nextJoined=joined.includes('risk')?joined:[...joined,'risk'];
-        const nextHistory=[...history,{action:'join:risk',activityId:'risk',type:'join',source:'admin-game',adminUid:adminUser.uid,scannedAt:new Date().toISOString()}];
+        const nextHistory=[...history,{action:'join:risk',activityId:'risk',type:'join',dateKey:bangkokDateKey(),source:'admin-game',adminUid:adminUser.uid,scannedAt:new Date().toISOString()}];
         transaction.update(ref,{'state.joined':nextJoined,'state.scanHistory':nextHistory,updatedAt:serverTimestamp()});
     });
 }
@@ -272,8 +281,8 @@ async function recordWinner(){
         const participantSnap=await transaction.get(participantRef);
         if(!participantSnap.exists)throw new Error('participant-not-found');
         const data=participantSnap.data()||{},state=data.state||{},wins=Array.isArray(state.wins)?state.wins:[],history=Array.isArray(state.scanHistory)?state.scanHistory:[];
-        if(wins.includes('risk'))return {alreadyRecorded:true};
-        const nextWins=[...wins,'risk'],nextHistory=[...history,{action:'win:risk',activityId:'risk',type:'win',source:'admin-game',adminUid:adminUser.uid,scannedAt:new Date().toISOString()}];
+        if(completedOnBangkokDate(history,'win','risk'))return {alreadyRecorded:true};
+        const nextWins=wins.includes('risk')?wins:[...wins,'risk'],nextHistory=[...history,{action:'win:risk',activityId:'risk',type:'win',dateKey:bangkokDateKey(),source:'admin-game',adminUid:adminUser.uid,scannedAt:new Date().toISOString()}];
         transaction.update(participantRef,{'state.wins':nextWins,'state.scanHistory':nextHistory,updatedAt:serverTimestamp()});
         return {alreadyRecorded:false};
     });
@@ -497,7 +506,7 @@ async function startGame() {
         await recordParticipation();
         stopConfetti();selectedScenarios=getNext2Scenarios();currentQIndex=0;totalScore=0;timeLeft=300;gameFinishing=false;
         switchScreen('game-screen');startTimer();loadQuestion();
-    }catch(error){console.error(error);setPlayerMessage('บันทึกการเข้าร่วมไม่สำเร็จ กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่','error')}
+    }catch(error){console.error(error);setPlayerMessage(error.message==='already-played-today'?'พนักงานรหัสนี้เล่นกิจกรรมนี้แล้วในวันนี้ กรุณากลับมาเล่นใหม่ในวันถัดไป':'บันทึกการเข้าร่วมไม่สำเร็จ กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่','error')}
     finally{button.disabled=false;button.textContent='เริ่มเล่นเกม'}
 }
 
