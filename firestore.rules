@@ -18,6 +18,28 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.role == "superadmin";
     }
 
+    function validActivityPoints(activityId, type, points) {
+      return (type == "win" && points == 20)
+        || (type == "join" && activityId in ["risk", "kahoot", "bingo"] && points == 5)
+        || (type == "join" && activityId == "carbon" && points == 20);
+    }
+
+    function validCompletionScoreUpdate(userId) {
+      let completionId = request.resource.data.scores.lastCompletionId;
+      let completion = getAfter(/databases/$(database)/documents/participants/$(userId)/activityCompletions/$(completionId)).data;
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(["state", "scores", "updatedAt"])
+        && request.resource.data.state.coupons == resource.data.state.coupons
+        && completion.userId == userId
+        && completion.completionId == completionId
+        && validActivityPoints(completion.activityId, completion.type, completion.points)
+        && request.resource.data.scores.participationPoints
+           == resource.data.scores.participationPoints + (completion.type == "join" ? completion.points : 0)
+        && request.resource.data.scores.winnerPoints
+           == resource.data.scores.winnerPoints + (completion.type == "win" ? completion.points : 0)
+        && request.resource.data.scores.totalPoints
+           == request.resource.data.scores.participationPoints + request.resource.data.scores.winnerPoints;
+    }
+
     match /participants/{userId} {
       allow create: if signedIn()
                     && request.auth.uid == userId
@@ -30,18 +52,38 @@ service cloud.firestore {
                       || (
                         request.auth.uid == userId
                         && (
-                          request.resource.data.state.coupons == resource.data.state.coupons
+                          (
+                            request.resource.data.scores == resource.data.scores
+                            && request.resource.data.state.coupons == resource.data.state.coupons
+                          )
                           || (
+                            request.resource.data.scores == resource.data.scores
+                            &&
                             request.resource.data.state.coupons.size() == resource.data.state.coupons.size() + 1
                             && request.resource.data.state.coupons[request.resource.data.state.coupons.size() - 1].used == false
                             && getAfter(/databases/$(database)/documents/system/couponInventory).data.lastIssuedTo == request.auth.uid
                             && getAfter(/databases/$(database)/documents/system/couponInventory).data.lastCouponCode
                                == request.resource.data.state.coupons[request.resource.data.state.coupons.size() - 1].code
                           )
+                          || validCompletionScoreUpdate(userId)
                         )
                       )
                     );
       allow delete: if isSuperAdmin();
+    }
+
+    match /participants/{userId}/activityCompletions/{completionId} {
+      allow read: if signedIn() && (request.auth.uid == userId || isAdmin());
+      allow create: if signedIn()
+                    && (request.auth.uid == userId || isAdmin())
+                    && request.resource.data.userId == userId
+                    && request.resource.data.completionId == completionId
+                    && completionId == request.resource.data.dateKey + "_" + request.resource.data.activityId + "_" + request.resource.data.type
+                    && request.resource.data.dateKey.matches("^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
+                    && validActivityPoints(request.resource.data.activityId, request.resource.data.type, request.resource.data.points)
+                    && request.resource.data.completedAt == request.time
+                    && getAfter(/databases/$(database)/documents/participants/$(userId)).data.scores.lastCompletionId == completionId;
+      allow update, delete: if false;
     }
 
     match /admins/{adminId} {

@@ -233,6 +233,10 @@ function bangkokDateKey(value=new Date()){
 function completedOnBangkokDate(history,type,activityId,dateKey=bangkokDateKey()){
     return history.some(entry=>entry?.type===type&&entry?.activityId===activityId&&bangkokDateKey(entry.scannedAt)===dateKey);
 }
+const activityPoints={risk:5,kahoot:5,bingo:5,carbon:20,supplier:5};
+function completionRecordsForState(state,type){const records=[],seen=new Set(),history=Array.isArray(state.scanHistory)?state.scanHistory:[],legacy=Array.isArray(state[type==='join'?'joined':'wins'])?state[type==='join'?'joined':'wins']:[];history.filter(entry=>entry?.type===type&&entry?.activityId).forEach(entry=>{const dateKey=entry.dateKey||bangkokDateKey(entry.scannedAt),key=`${dateKey}_${entry.activityId}_${type}`;if(!seen.has(key)){seen.add(key);records.push({id:entry.activityId,dateKey})}});legacy.forEach(id=>{if(!records.some(record=>record.id===id))records.push({id,dateKey:'legacy'})});return records}
+function scoresForState(state){const joins=completionRecordsForState(state,'join'),wins=completionRecordsForState(state,'win'),participationPoints=5+joins.reduce((sum,record)=>sum+(activityPoints[record.id]||0),0),winnerPoints=wins.length*20;return {participationPoints,winnerPoints,totalPoints:participationPoints+winnerPoints,lastCompletionId:''}}
+function completionDocumentId(dateKey,activityId,type){return `${dateKey}_${activityId}_${type}`}
 function setPlayerMessage(message,type=''){const el=document.getElementById('player-message');el.textContent=message;el.className=`player-message ${type}`.trim()}
 
 auth.onAuthStateChanged(async user=>{
@@ -263,27 +267,28 @@ async function checkPlayer(){
 
 async function recordParticipation(){
     if(!selectedPlayer||!adminUser)throw new Error('player-required');
-    const ref=db.collection('participants').doc(selectedPlayer.uid);
+    const ref=db.collection('participants').doc(selectedPlayer.uid),dateKey=bangkokDateKey(),completionId=completionDocumentId(dateKey,'risk','join'),completionRef=ref.collection('activityCompletions').doc(completionId);
     await db.runTransaction(async transaction=>{
-        const snap=await transaction.get(ref);if(!snap.exists)throw new Error('participant-not-found');
+        const snap=await transaction.get(ref),completionSnap=await transaction.get(completionRef);if(!snap.exists)throw new Error('participant-not-found');if(completionSnap.exists)throw new Error('already-played-today');
         const data=snap.data()||{},state=data.state||{},joined=Array.isArray(state.joined)?state.joined:[],history=Array.isArray(state.scanHistory)?state.scanHistory:[];
-        if(completedOnBangkokDate(history,'join','risk'))throw new Error('already-played-today');
         const nextJoined=joined.includes('risk')?joined:[...joined,'risk'];
-        const nextHistory=[...history,{action:'join:risk',activityId:'risk',type:'join',dateKey:bangkokDateKey(),source:'admin-game',adminUid:adminUser.uid,scannedAt:new Date().toISOString()}];
-        transaction.update(ref,{'state.joined':nextJoined,'state.scanHistory':nextHistory,updatedAt:serverTimestamp()});
+        const nextHistory=[...history,{action:'join:risk',activityId:'risk',type:'join',dateKey,source:'admin-game',adminUid:adminUser.uid,scannedAt:new Date().toISOString()}],currentScores=data.scores||scoresForState(state),participationPoints=Number(currentScores.participationPoints||0)+5,winnerPoints=Number(currentScores.winnerPoints||0),scores={participationPoints,winnerPoints,totalPoints:participationPoints+winnerPoints,lastCompletionId:completionId};
+        transaction.set(completionRef,{completionId,userId:selectedPlayer.uid,dateKey,activityId:'risk',type:'join',points:5,source:'admin-game',adminUid:adminUser.uid,completedAt:serverTimestamp()});
+        transaction.update(ref,{'state.joined':nextJoined,'state.scanHistory':nextHistory,scores,updatedAt:serverTimestamp()});
     });
 }
 
 async function recordWinner(){
     if(!selectedPlayer||!adminUser)throw new Error('player-required');
-    const participantRef=db.collection('participants').doc(selectedPlayer.uid);
+    const participantRef=db.collection('participants').doc(selectedPlayer.uid),dateKey=bangkokDateKey(),completionId=completionDocumentId(dateKey,'risk','win'),completionRef=participantRef.collection('activityCompletions').doc(completionId);
     return db.runTransaction(async transaction=>{
-        const participantSnap=await transaction.get(participantRef);
+        const participantSnap=await transaction.get(participantRef),completionSnap=await transaction.get(completionRef);
         if(!participantSnap.exists)throw new Error('participant-not-found');
+        if(completionSnap.exists)return {alreadyRecorded:true};
         const data=participantSnap.data()||{},state=data.state||{},wins=Array.isArray(state.wins)?state.wins:[],history=Array.isArray(state.scanHistory)?state.scanHistory:[];
-        if(completedOnBangkokDate(history,'win','risk'))return {alreadyRecorded:true};
-        const nextWins=wins.includes('risk')?wins:[...wins,'risk'],nextHistory=[...history,{action:'win:risk',activityId:'risk',type:'win',dateKey:bangkokDateKey(),source:'admin-game',adminUid:adminUser.uid,scannedAt:new Date().toISOString()}];
-        transaction.update(participantRef,{'state.wins':nextWins,'state.scanHistory':nextHistory,updatedAt:serverTimestamp()});
+        const nextWins=wins.includes('risk')?wins:[...wins,'risk'],nextHistory=[...history,{action:'win:risk',activityId:'risk',type:'win',dateKey,source:'admin-game',adminUid:adminUser.uid,scannedAt:new Date().toISOString()}],currentScores=data.scores||scoresForState(state),participationPoints=Number(currentScores.participationPoints||0),winnerPoints=Number(currentScores.winnerPoints||0)+20,scores={participationPoints,winnerPoints,totalPoints:participationPoints+winnerPoints,lastCompletionId:completionId};
+        transaction.set(completionRef,{completionId,userId:selectedPlayer.uid,dateKey,activityId:'risk',type:'win',points:20,source:'admin-game',adminUid:adminUser.uid,completedAt:serverTimestamp()});
+        transaction.update(participantRef,{'state.wins':nextWins,'state.scanHistory':nextHistory,scores,updatedAt:serverTimestamp()});
         return {alreadyRecorded:false};
     });
 }
