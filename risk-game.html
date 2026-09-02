@@ -791,7 +791,7 @@ async function finishGame() {
         startConfetti();
         try{
             const result=await recordWinner();
-            syncStatus.textContent=result.alreadyRecorded?'ผู้เล่นท่านนี้มีสิทธิ์ Winner จากเกมนี้อยู่แล้ว':'ยินดีด้วยค่ะ บันทึกสิทธิ์ผู้ชนะลงใน E-Stamp เรียบร้อยแล้ว เชิญไปหมุนวงล้อลุ้นรับรางวัลได้เลยค่ะ';
+            syncStatus.textContent=result.alreadyRecorded?'ผู้เล่นท่านนี้ได้รับสิทธิ์ผู้ชนะใน E-Stamp แล้ว':'ได้รับสิทธิ์คูปองสำหรับผู้ชนะแล้ว สามารถตรวจสอบและหมุนลุ้นรางวัลได้ที่ E-Stamp ค่ะ';
         }catch(error){console.error(error);syncStatus.textContent='บันทึก Winner ไม่สำเร็จ กรุณาอย่าปิดหน้านี้และแจ้งเจ้าหน้าที่';playAgain.style.display='inline-block'}
     }
 }
