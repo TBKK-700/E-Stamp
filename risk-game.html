@@ -211,7 +211,7 @@
         </div>
         <p id="time-used-text" style="margin-bottom: 25px; color: #4b5563; font-size: 1.1rem;"></p>
         <p id="sync-status" class="sync-status"></p>
-        <button id="play-again-button" class="btn" onclick="resetGame()">เล่นใหม่อีกครั้ง (รอบถัดไป)</button>
+        <button id="play-again-button" class="btn" onclick="resetGame()">เริ่มเกมใหม่สำหรับผู้เล่นคนถัดไป</button>
     </div>
 </div>
 
@@ -265,23 +265,17 @@ async function recordParticipation(){
     });
 }
 
-async function recordWinnerAndCoupon(){
+async function recordWinner(){
     if(!selectedPlayer||!adminUser)throw new Error('player-required');
-    const participantRef=db.collection('participants').doc(selectedPlayer.uid),inventoryRef=db.collection('system').doc('couponInventory');
+    const participantRef=db.collection('participants').doc(selectedPlayer.uid);
     return db.runTransaction(async transaction=>{
-        const participantSnap=await transaction.get(participantRef),inventorySnap=await transaction.get(inventoryRef);
+        const participantSnap=await transaction.get(participantRef);
         if(!participantSnap.exists)throw new Error('participant-not-found');
-        const data=participantSnap.data()||{},state=data.state||{},wins=Array.isArray(state.wins)?state.wins:[],coupons=Array.isArray(state.coupons)?state.coupons:[],history=Array.isArray(state.scanHistory)?state.scanHistory:[];
-        if(wins.includes('risk'))return {alreadyRecorded:true,coupon:null};
+        const data=participantSnap.data()||{},state=data.state||{},wins=Array.isArray(state.wins)?state.wins:[],history=Array.isArray(state.scanHistory)?state.scanHistory:[];
+        if(wins.includes('risk'))return {alreadyRecorded:true};
         const nextWins=[...wins,'risk'],nextHistory=[...history,{action:'win:risk',activityId:'risk',type:'win',source:'admin-game',adminUid:adminUser.uid,scannedAt:new Date().toISOString()}];
-        const inventory=inventorySnap.exists?inventorySnap.data():{},food=inventorySnap.exists?Number(inventory.foodRemaining||0):500,coffee=inventorySnap.exists?Number(inventory.coffeeRemaining||0):50,total=food+coffee;
-        if(total<1){transaction.update(participantRef,{'state.wins':nextWins,'state.scanHistory':nextHistory,updatedAt:serverTimestamp()});return {alreadyRecorded:false,coupon:null}}
-        const type=Math.random()*total<coffee?'coffee':'food',number=inventorySnap.exists?Number(inventory.nextCouponNumber||1):1,name=type==='coffee'?'คูปองกาแฟ To Be TBKK':'คูปองอาหาร';
-        const coupon={name,type,code:`CP-${String(number).padStart(4,'0')}`,used:false,issuedAt:new Date().toISOString(),sourceActivity:'risk',autoIssued:true};
-        const nextCoupons=[...coupons,coupon];
-        transaction.set(inventoryRef,{foodRemaining:food-(type==='food'?1:0),coffeeRemaining:coffee-(type==='coffee'?1:0),nextCouponNumber:number+1,lastCouponCode:coupon.code,lastCouponType:type,lastIssuedTo:selectedPlayer.uid,issuedBy:adminUser.uid,inventoryInitialized:true,initializedBy:adminUser.uid,updatedAt:serverTimestamp()},{merge:true});
-        transaction.update(participantRef,{'state.wins':nextWins,'state.coupons':nextCoupons,'state.scanHistory':nextHistory,updatedAt:serverTimestamp()});
-        return {alreadyRecorded:false,coupon};
+        transaction.update(participantRef,{'state.wins':nextWins,'state.scanHistory':nextHistory,updatedAt:serverTimestamp()});
+        return {alreadyRecorded:false};
     });
 }
 // Web Audio API Sound Generator
@@ -786,8 +780,8 @@ async function finishGame() {
     const secs = timeUsed % 60;
     document.getElementById('time-used-text').innerText = `ใช้เวลาในการเล่นไป: ${mins} นาที ${secs} วินาที`;
     const syncStatus=document.getElementById('sync-status'),playAgain=document.getElementById('play-again-button');
-    playAgain.style.display=isWinner?'none':'inline-block';
-    syncStatus.textContent=isWinner?'กำลังบันทึก Winner และออกคูปองอัตโนมัติ...':'บันทึกผลแล้ว สามารถเริ่มเล่นรอบถัดไปได้';
+    playAgain.style.display='inline-block';
+    syncStatus.textContent=isWinner?'กำลังบันทึกสิทธิ์ผู้ชนะลงใน E-Stamp...':'จบรอบนี้แล้ว กดปุ่มด้านล่างเพื่อเตรียมเกมสำหรับผู้เล่นคนถัดไป';
 
     switchScreen('result-screen');
 
@@ -796,8 +790,8 @@ async function finishGame() {
         playSound('applause');
         startConfetti();
         try{
-            const result=await recordWinnerAndCoupon();
-            syncStatus.textContent=result.alreadyRecorded?'ผู้เล่นท่านนี้ได้รับสถานะ Winner จากเกมนี้แล้ว':result.coupon?`บันทึก Winner และออก ${result.coupon.name} (${result.coupon.code}) แล้ว`:'บันทึก Winner แล้ว แต่คูปองหมด กรุณาติดต่อเจ้าหน้าที่';
+            const result=await recordWinner();
+            syncStatus.textContent=result.alreadyRecorded?'ผู้เล่นท่านนี้มีสิทธิ์ Winner จากเกมนี้อยู่แล้ว':'ยินดีด้วยค่ะ บันทึกสิทธิ์ผู้ชนะลงใน E-Stamp เรียบร้อยแล้ว เชิญไปหมุนวงล้อลุ้นรับรางวัลได้เลยค่ะ';
         }catch(error){console.error(error);syncStatus.textContent='บันทึก Winner ไม่สำเร็จ กรุณาอย่าปิดหน้านี้และแจ้งเจ้าหน้าที่';playAgain.style.display='inline-block'}
     }
 }
