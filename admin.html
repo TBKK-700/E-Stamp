@@ -33,7 +33,7 @@
     .game-launch{display:flex;flex-wrap:wrap;justify-content:center;gap:14px;margin:22px 0 18px}
     .game-launch .btn{min-height:62px;padding:15px 34px;border:2px solid #148f7b;border-radius:18px;color:#fff;background:linear-gradient(135deg,#12a88f,#087c6a);box-shadow:0 7px #086858,0 13px 28px #087c6a35;font-size:20px;text-decoration:none;transition:transform .15s,filter .15s}
     .game-launch .btn:hover{filter:brightness(1.08);transform:translateY(-1px)}
-    .access-qr-launch{display:flex;justify-content:center;margin:-4px 0 20px}.access-qr-button{color:#234f91;background:#fff7d7;border:2px solid #e5c65e;box-shadow:0 4px #d0af43}.access-qr-modal{width:min(460px,100%);padding:24px;text-align:center}.access-qr-modal h2{margin:0 0 8px;color:var(--blue);font-size:28px}.access-qr-modal p{margin:0 0 18px;line-height:1.6}.access-qr-code{display:grid;place-items:center;min-height:300px;margin:auto}.access-qr-code img,.access-qr-code canvas{width:min(300px,75vw)!important;height:auto!important;max-width:100%}.access-qr-actions{display:flex;flex-wrap:wrap;justify-content:center;gap:10px;margin-top:18px}.access-qr-actions a{display:inline-flex;align-items:center;text-decoration:none}
+    .access-qr-launch{display:flex;justify-content:center;margin:-4px 0 20px}.access-qr-button{color:#234f91;background:#fff7d7;border:2px solid #e5c65e;box-shadow:0 4px #d0af43}.modal-backdrop{position:absolute;inset:0}.access-qr-modal{position:relative;z-index:1;width:min(460px,100%);padding:24px;text-align:center}.access-qr-modal h2{margin:0 0 8px;color:var(--blue);font-size:28px}.access-qr-modal p{margin:0 0 18px;line-height:1.6}.access-qr-code{display:grid;place-items:center;min-height:300px;margin:auto}.access-qr-code img,.access-qr-code canvas{width:min(300px,75vw)!important;height:auto!important;max-width:100%}.access-qr-actions{display:flex;flex-wrap:wrap;justify-content:center;gap:10px;margin-top:18px}.access-qr-actions a{display:inline-flex;align-items:center;text-decoration:none}
     @media(max-width:560px){.cards{grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}.card{min-height:112px;padding:10px 5px}.card span{min-height:42px;font-size:11px}.card b{font-size:24px}}
   </style>
 </head>
@@ -58,7 +58,7 @@
   </main>
 </div>
 <div id="couponManager" class="overlay hidden"><section class="modal"><div class="modal-head"><div><b>ยืนยันการใช้คูปอง</b><br><small id="couponOwner"></small></div><button id="closeCouponManager" class="icon-btn" aria-label="ปิด">×</button></div><div id="couponManagerList" class="coupon-list"></div></section></div>
-<div id="eStampQrModal" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="eStampQrTitle"><section class="modal access-qr-modal"><h2 id="eStampQrTitle">📱 เข้า E-Stamp</h2><p>สำหรับพนักงานที่เผลอปิดหน้า E-Stamp<br>สแกน QR นี้เพื่อกลับเข้าสู่ระบบ</p><div id="eStampAccessQr" class="access-qr-code"></div><div class="access-qr-actions"><a class="btn secondary" href="https://e-stamp-bc529.web.app/" target="_blank" rel="noopener">🔗 เปิด E-Stamp</a><button id="closeEStampQr" class="btn ghost">✕ ปิด</button></div></section></div>
+<div id="eStampQrModal" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="eStampQrTitle"><div id="eStampQrBackdrop" class="modal-backdrop"></div><section class="modal access-qr-modal"><h2 id="eStampQrTitle">📱 เข้า E-Stamp</h2><p>สำหรับพนักงานที่เผลอปิดหน้า E-Stamp<br>สแกน QR นี้เพื่อกลับเข้าสู่ระบบ</p><div id="eStampAccessQr" class="access-qr-code"></div><div class="access-qr-actions"><a class="btn secondary" href="https://e-stamp-bc529.web.app/" target="_blank" rel="noopener">🔗 เปิด E-Stamp</a><button id="closeEStampQr" class="btn ghost">✕ ปิด</button></div></section></div>
 
 <script src="qrcode.min.js"></script>
 <script type="module">
@@ -102,7 +102,7 @@ $('#logoutButton').onclick=()=>{stopQr();stopRealtime();signOut(auth)};$('#refre
 $('#closeCouponManager').onclick=()=>$('#couponManager').classList.add('hidden');
 const eStampQrModal=$('#eStampQrModal'),closeEStampQr=()=>eStampQrModal.classList.add('hidden');
 $('#openEStampQr').onclick=()=>{if(!$('#eStampAccessQr').hasChildNodes())new QRCode($('#eStampAccessQr'),{text:'https://e-stamp-bc529.web.app/',width:300,height:300,colorDark:'#111827',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.H});eStampQrModal.classList.remove('hidden');$('#closeEStampQr').focus()};
-$('#closeEStampQr').onclick=closeEStampQr;eStampQrModal.onclick=event=>{if(event.target===eStampQrModal)closeEStampQr()};document.addEventListener('keydown',event=>{if(event.key==='Escape'&&!eStampQrModal.classList.contains('hidden'))closeEStampQr()});
+$('#closeEStampQr').onclick=closeEStampQr;$('#eStampQrBackdrop').onclick=closeEStampQr;document.addEventListener('keydown',event=>{if(event.key==='Escape'&&!eStampQrModal.classList.contains('hidden'))closeEStampQr()});
 </script>
 </body>
 </html>
