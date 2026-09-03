@@ -60,11 +60,12 @@
 <script src="qrcode.min.js"></script>
 <script type="module">
 import {initializeApp} from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js';
-import {getAuth,onAuthStateChanged,signInWithEmailAndPassword,signOut} from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js';
-import {getFirestore,doc,getDoc,setDoc,collection,getDocs,serverTimestamp,Timestamp,runTransaction,onSnapshot} from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js';
+import {getAuth,connectAuthEmulator,onAuthStateChanged,signInWithEmailAndPassword,signOut} from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js';
+import {getFirestore,connectFirestoreEmulator,doc,getDoc,setDoc,collection,getDocs,serverTimestamp,Timestamp,runTransaction,onSnapshot} from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js';
 
 const firebaseConfig={apiKey:'AIzaSyCfZr_s-idDZdg-OFhJN2AZ6vNSVdbqht8',authDomain:'e-stamp-bc529.firebaseapp.com',projectId:'e-stamp-bc529',storageBucket:'e-stamp-bc529.firebasestorage.app',messagingSenderId:'506704058490',appId:'1:506704058490:web:e6706cc335ee935c6a43c3'};
 const app=initializeApp(firebaseConfig),auth=getAuth(app),db=getFirestore(app),$=s=>document.querySelector(s);
+if(['localhost','127.0.0.1'].includes(location.hostname)){connectAuthEmulator(auth,'http://127.0.0.1:9099',{disableWarnings:true});connectFirestoreEmulator(db,'127.0.0.1',8080)}
 const activityPoints={risk:5,kahoot:5,bingo:5,carbon:20,supplier:5};
 let participants=[],filtered=[],adminUser=null,qrTimer=null,qrRenewAt=0,qrWriting=false,participantUnsub=null,inventoryUnsub=null;
 

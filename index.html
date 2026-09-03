@@ -42,11 +42,12 @@
 <script src="html5-qrcode.min.js"></script>
 <script type="module">
 import {initializeApp} from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js';
-import {getAuth,onAuthStateChanged,createUserWithEmailAndPassword,signInWithEmailAndPassword,signOut} from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js';
-import {getFirestore,doc,getDoc,setDoc,serverTimestamp,runTransaction,onSnapshot} from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js';
+import {getAuth,connectAuthEmulator,onAuthStateChanged,createUserWithEmailAndPassword,signInWithEmailAndPassword,signOut} from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js';
+import {getFirestore,connectFirestoreEmulator,doc,getDoc,setDoc,serverTimestamp,runTransaction,onSnapshot} from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js';
 
 const firebaseConfig={apiKey:'AIzaSyCfZr_s-idDZdg-OFhJN2AZ6vNSVdbqht8',authDomain:'e-stamp-bc529.firebaseapp.com',projectId:'e-stamp-bc529',storageBucket:'e-stamp-bc529.firebasestorage.app',messagingSenderId:'506704058490',appId:'1:506704058490:web:e6706cc335ee935c6a43c3'};
 const firebaseApp=initializeApp(firebaseConfig),auth=getAuth(firebaseApp),db=getFirestore(firebaseApp);
+if(['localhost','127.0.0.1'].includes(location.hostname)){connectAuthEmulator(auth,'http://127.0.0.1:9099',{disableWarnings:true});connectFirestoreEmulator(db,'127.0.0.1',8080)}
 const items=[{id:'risk',name:'คิดให้ครบ จบทุกความเสี่ยง!',p:5,win:true},{id:'kahoot',name:'Kahoot',p:5,win:true},{id:'bingo',name:'Bingo go with ดวง!',p:5,win:true},{id:'carbon',name:'โอ้โหคาร์บอน ลดอย่างไร',p:20,win:false}];
 const historicalActivityPoints={risk:5,kahoot:5,bingo:5,carbon:20,supplier:5};
 const state={joined:new Set(),wins:new Set(),scan:null,scanHistory:[],grandCode:null,coupons:[],rotation:0,spinning:false,pendingCoupon:null};
@@ -64,6 +65,16 @@ function completionRecordsFor(saved,type){const records=[],seen=new Set(),histor
 function completionRecords(type){return completionRecordsFor({scanHistory:state.scanHistory,joined:[...state.joined],wins:[...state.wins]},type)}
 function completedToday(type,id){const today=bangkokDateKey();return completionRecords(type).some(record=>record.id===id&&record.dateKey===today)}
 function completionDocumentId(dateKey,activityId,type){return `${dateKey}_${activityId}_${type}`}
+function parseQuizRoomUrl(raw){try{const url=new URL(String(raw).trim()),allowedHosts=new Set(['tbkk-safety-quiz.web.app','tbkk-safety-quiz.firebaseapp.com']),allowedPaths=new Set(['/','/index.html']),pin=url.searchParams.get('pin');if(url.protocol!=='https:'||!allowedHosts.has(url.hostname)||(url.port&&url.port!=='443')||!allowedPaths.has(url.pathname)||!/^\d{6}$/.test(pin||''))return null;return {url:url.href,pin}}catch{return null}}
+async function recordQuizParticipationAndOpen(quizRoom){
+ const dateKey=bangkokDateKey(),activityId='kahoot',type='join',points=historicalActivityPoints[activityId]||5,completionId=completionDocumentId(dateKey,activityId,type),participantRef=doc(db,'participants',currentUser.uid),completionRef=doc(db,'participants',currentUser.uid,'activityCompletions',completionId);
+ const result=await runTransaction(db,async transaction=>{
+  const participantSnap=await transaction.get(participantRef),completionSnap=await transaction.get(completionRef);if(!participantSnap.exists())throw new Error('participant-not-found');if(completionSnap.exists())return {status:'ALREADY_COMPLETED'};
+  const participantData=participantSnap.data(),savedState=participantData.state||{},joined=Array.isArray(savedState.joined)?savedState.joined:[],history=Array.isArray(savedState.scanHistory)?savedState.scanHistory:[],coupons=Array.isArray(savedState.coupons)?savedState.coupons:[],wins=Array.isArray(savedState.wins)?savedState.wins:[],nextState={...savedState,joined:joined.includes(activityId)?joined:[...joined,activityId],wins,coupons,scanHistory:[...history,{action:'join:kahoot',activityId,type,dateKey,source:'quiz-room-qr',roomCode:quizRoom.pin,scannedAt:new Date().toISOString()}]},currentScores=participantData.scores||scoresForState(savedState),participationPoints=Number(currentScores.participationPoints||0)+points,winnerPoints=Number(currentScores.winnerPoints||0),nextScores={participationPoints,winnerPoints,totalPoints:participationPoints+winnerPoints,lastCompletionId:completionId};
+  transaction.set(completionRef,{completionId,userId:currentUser.uid,dateKey,activityId,type,points,source:'quiz-room-qr',roomCode:quizRoom.pin,completedAt:serverTimestamp()});transaction.update(participantRef,{state:nextState,scores:nextScores,updatedAt:serverTimestamp()});return {status:'COMPLETED',state:nextState};
+ });
+ await stopScanner();state.scan=null;$('#scanner').classList.add('hidden');if(result.status==='COMPLETED'){restore(result.state);render()}window.location.assign(quizRoom.url);
+}
 async function loadCouponStock(){try{const snap=await getDoc(doc(db,'system','couponInventory'));if(snap.exists()){const data=snap.data();couponStock={food:Number(data.foodRemaining||0),coffee:Number(data.coffeeRemaining||0)}}render()}catch(error){console.warn('coupon inventory unavailable',error)}}
 function switchTab(id){document.querySelectorAll('[data-tab]').forEach(b=>b.classList.toggle('active',b.dataset.tab===id));document.querySelectorAll('.panel').forEach(p=>p.classList.add('hidden'));$('#'+id).classList.remove('hidden')}
 function render(){
@@ -85,7 +96,7 @@ let qrScanner=null,scanBusy=false;
 async function stopScanner(){if(qrScanner){try{if(qrScanner.isScanning)await qrScanner.stop()}catch(error){console.warn(error)}try{qrScanner.clear()}catch(error){console.warn(error)}qrScanner=null}}
 async function openScanner(action){const[k,id]=action.split(':');if(k==='join'&&completedToday('join',id)){alert('คุณเข้าร่วมกิจกรรมนี้แล้วในวันนี้ กรุณากลับมาใหม่ในวันถัดไป');return}if(k==='win'&&!completedToday('join',id)){alert('กรุณาเข้าร่วมกิจกรรมนี้ในวันนี้ก่อน');return}if(k==='win'&&completedToday('win',id)){alert('คุณรับคะแนนผู้ชนะกิจกรรมนี้แล้วในวันนี้');return}state.scan=action;scanBusy=false;$('#scanner').classList.remove('hidden');$('#scanStatus').textContent='กรุณาอนุญาตใช้กล้อง แล้ววาง QR ที่หน้าฐานให้อยู่ในกรอบ';try{qrScanner=new Html5Qrcode('qrReader');await qrScanner.start({facingMode:'environment'},{fps:10,qrbox:{width:240,height:240},aspectRatio:1},decoded=>handleQr(decoded),()=>{})}catch(error){console.error(error);$('#scanStatus').textContent='เปิดกล้องไม่สำเร็จ กรุณาอนุญาตสิทธิ์กล้องในการตั้งค่าเบราว์เซอร์ แล้วลองใหม่'}}
 async function handleQr(decoded){
- if(scanBusy||!state.scan)return;const raw=String(decoded).trim();if(!raw.startsWith('SHE26D:')){$('#scanStatus').textContent='QR นี้หมดอายุหรือไม่ใช่ QR หมุนเวียนของงาน';return}scanBusy=true;
+ if(scanBusy||!state.scan)return;const raw=String(decoded).trim(),quizRoom=parseQuizRoomUrl(raw);if(quizRoom&&state.scan==='join:any'){scanBusy=true;try{await recordQuizParticipationAndOpen(quizRoom)}catch(error){console.error(error);scanBusy=false;$('#scanStatus').textContent='บันทึกการเข้าร่วม Safety Quiz ไม่สำเร็จ กรุณาตรวจอินเทอร์เน็ตแล้วลองใหม่'}return}if(!raw.startsWith('SHE26D:')){$('#scanStatus').textContent='QR นี้ไม่ใช่ QR กิจกรรมหรือห้อง Safety Quiz ที่ถูกต้อง';return}scanBusy=true;
  try{
   const token=raw.slice(7),tokenSnap=await getDoc(doc(db,'qrTokens',token));if(!tokenSnap.exists()){scanBusy=false;$('#scanStatus').textContent='ไม่พบ QR นี้ในระบบ กรุณาสแกนรหัสล่าสุดจากเจ้าหน้าที่';return}
   const tokenData=tokenSnap.data(),expiresAt=tokenData.expiresAt&&tokenData.expiresAt.toMillis?tokenData.expiresAt.toMillis():0,action=tokenData.action;if(tokenData.active!==true||expiresAt<Date.now()){scanBusy=false;$('#scanStatus').textContent='QR หมดอายุแล้ว กรุณาสแกนรหัสใหม่บนหน้าจอเจ้าหน้าที่';return}
