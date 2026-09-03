@@ -256,8 +256,8 @@ async function checkPlayer(){
     if(!wanted){setPlayerMessage('กรุณากรอกรหัสพนักงาน','error');return}
     button.disabled=true;button.textContent='กำลังตรวจสอบ...';
     try{
-        const snapshot=await db.collection('participants').get();
-        const match=snapshot.docs.find(s=>normalizedEmployeeId(s.data()?.profile?.employeeId)===wanted);
+        const snapshot=await db.collection('participants').where('profile.employeeId','==',wanted).limit(1).get();
+        const match=snapshot.docs[0];
         if(!match){setPlayerMessage('ไม่พบรหัสนี้ใน E-Stamp กรุณาตรวจสอบอีกครั้ง','error');return}
         const profile=match.data().profile||{};selectedPlayer={uid:match.id,employeeId:profile.employeeId||wanted,name:profile.name||''};
         setPlayerMessage(`พบข้อมูล: ${selectedPlayer.employeeId} · ${selectedPlayer.name}`,'success');document.getElementById('start-game-button').disabled=false;
