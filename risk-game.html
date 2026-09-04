@@ -222,7 +222,7 @@
 const firebaseConfig={apiKey:'AIzaSyCfZr_s-idDZdg-OFhJN2AZ6vNSVdbqht8',authDomain:'e-stamp-bc529.firebaseapp.com',projectId:'e-stamp-bc529',storageBucket:'e-stamp-bc529.firebasestorage.app',messagingSenderId:'506704058490',appId:'1:506704058490:web:e6706cc335ee935c6a43c3'};
 firebase.initializeApp(firebaseConfig);
 const auth=firebase.auth(),db=firebase.firestore(),serverTimestamp=firebase.firestore.FieldValue.serverTimestamp;
-let adminUser=null,selectedPlayer=null;
+let adminUser=null,selectedPlayer=null,currentRoundId=null;
 
 function normalizedEmployeeId(value){return String(value||'').trim().toUpperCase().replace(/[^A-Z0-9]/g,'')}
 function bangkokDateKey(value=new Date()){
@@ -236,11 +236,13 @@ function completedOnBangkokDate(history,type,activityId,dateKey=bangkokDateKey()
 const activityPoints={risk:5,kahoot:5,bingo:5,carbon:20,supplier:5};
 function completionRecordsForState(state,type){const records=[],seen=new Set(),history=Array.isArray(state.scanHistory)?state.scanHistory:[],legacy=Array.isArray(state[type==='join'?'joined':'wins'])?state[type==='join'?'joined':'wins']:[];history.filter(entry=>entry?.type===type&&entry?.activityId).forEach(entry=>{const dateKey=entry.dateKey||bangkokDateKey(entry.scannedAt),key=`${dateKey}_${entry.activityId}_${type}`;if(!seen.has(key)){seen.add(key);records.push({id:entry.activityId,dateKey})}});legacy.forEach(id=>{if(!records.some(record=>record.id===id))records.push({id,dateKey:'legacy'})});return records}
 function scoresForState(state){const joins=completionRecordsForState(state,'join'),wins=completionRecordsForState(state,'win'),participationPoints=5+joins.reduce((sum,record)=>sum+(activityPoints[record.id]||0),0),winnerPoints=wins.length*20;return {participationPoints,winnerPoints,totalPoints:participationPoints+winnerPoints,lastCompletionId:''}}
-function completionDocumentId(dateKey,activityId,type){return `${dateKey}_${activityId}_${type}`}
+function completionDocumentId(dateKey,activityId,type,roundId=''){return `${dateKey}_${activityId}_${type}${roundId?`_${roundId}`:''}`}
+function createRoundId(){if(typeof crypto.randomUUID!=='function')throw new Error('secure-round-id-unavailable');const roundId=crypto.randomUUID().replaceAll('-','').toLowerCase();if(!/^[0-9a-f]{32}$/.test(roundId))throw new Error('invalid-round-id');return roundId}
+function validRoundId(roundId){return /^[0-9a-f]{32}$/.test(roundId||'')}
 function setPlayerMessage(message,type=''){const el=document.getElementById('player-message');el.textContent=message;el.className=`player-message ${type}`.trim()}
 
 auth.onAuthStateChanged(async user=>{
-    adminUser=null;selectedPlayer=null;document.getElementById('start-game-button').disabled=true;
+    adminUser=null;selectedPlayer=null;currentRoundId=null;document.getElementById('start-game-button').disabled=true;
     if(!user){setPlayerMessage('กรุณาเข้าสู่ระบบที่หน้าแอดมินก่อน แล้วกลับมาเปิดหน้าเกมนี้','error');return}
     try{
         const adminSnap=await db.collection('admins').doc(user.uid).get();
@@ -251,7 +253,7 @@ auth.onAuthStateChanged(async user=>{
 
 async function checkPlayer(){
     const button=document.getElementById('check-player-button'),wanted=normalizedEmployeeId(document.getElementById('employee-code').value);
-    selectedPlayer=null;document.getElementById('start-game-button').disabled=true;
+    selectedPlayer=null;currentRoundId=null;document.getElementById('start-game-button').disabled=true;
     if(!adminUser){setPlayerMessage('กรุณาเข้าสู่ระบบที่หน้าแอดมินก่อน','error');return}
     if(!wanted){setPlayerMessage('กรุณากรอกรหัสพนักงาน','error');return}
     button.disabled=true;button.textContent='กำลังตรวจสอบ...';
@@ -265,29 +267,30 @@ async function checkPlayer(){
     finally{button.disabled=false;button.textContent='ตรวจสอบรหัส'}
 }
 
-async function recordParticipation(){
+async function recordParticipation(roundId){
     if(!selectedPlayer||!adminUser)throw new Error('player-required');
-    const ref=db.collection('participants').doc(selectedPlayer.uid),dateKey=bangkokDateKey(),completionId=completionDocumentId(dateKey,'risk','join'),completionRef=ref.collection('activityCompletions').doc(completionId);
-    await db.runTransaction(async transaction=>{
-        const snap=await transaction.get(ref),completionSnap=await transaction.get(completionRef);if(!snap.exists)throw new Error('participant-not-found');if(completionSnap.exists)throw new Error('already-played-today');
+    if(!validRoundId(roundId))throw new Error('invalid-round-id');
+    const ref=db.collection('participants').doc(selectedPlayer.uid),dateKey=bangkokDateKey(),completionId=completionDocumentId(dateKey,'risk','join',roundId),completionRef=ref.collection('activityCompletions').doc(completionId);
+    return db.runTransaction(async transaction=>{
+        const completionSnap=await transaction.get(completionRef);if(completionSnap.exists)return {alreadyRecorded:true};const snap=await transaction.get(ref);if(!snap.exists)throw new Error('participant-not-found');
         const data=snap.data()||{},state=data.state||{},joined=Array.isArray(state.joined)?state.joined:[],history=Array.isArray(state.scanHistory)?state.scanHistory:[];
         const nextJoined=joined.includes('risk')?joined:[...joined,'risk'];
-        const nextHistory=[...history,{action:'join:risk',activityId:'risk',type:'join',dateKey,source:'admin-game',adminUid:adminUser.uid,scannedAt:new Date().toISOString()}],currentScores=data.scores||scoresForState(state),participationPoints=Number(currentScores.participationPoints||0)+5,winnerPoints=Number(currentScores.winnerPoints||0),scores={participationPoints,winnerPoints,totalPoints:participationPoints+winnerPoints,lastCompletionId:completionId};
-        transaction.set(completionRef,{completionId,userId:selectedPlayer.uid,dateKey,activityId:'risk',type:'join',points:5,source:'admin-game',adminUid:adminUser.uid,completedAt:serverTimestamp()});
+        const nextHistory=[...history,{action:'join:risk',activityId:'risk',type:'join',dateKey,completionId,roundId,source:'admin-game',adminUid:adminUser.uid,scannedAt:new Date().toISOString()}],currentScores=data.scores||scoresForState(state),participationPoints=Number(currentScores.participationPoints||0)+5,winnerPoints=Number(currentScores.winnerPoints||0),scores={participationPoints,winnerPoints,totalPoints:participationPoints+winnerPoints,lastCompletionId:completionId};
+        transaction.set(completionRef,{completionId,userId:selectedPlayer.uid,dateKey,activityId:'risk',type:'join',points:5,roundId,source:'admin-game',adminUid:adminUser.uid,completedAt:serverTimestamp()});
         transaction.update(ref,{'state.joined':nextJoined,'state.scanHistory':nextHistory,scores,updatedAt:serverTimestamp()});
+        return {alreadyRecorded:false};
     });
 }
 
-async function recordWinner(){
+async function recordWinner(roundId){
     if(!selectedPlayer||!adminUser)throw new Error('player-required');
-    const participantRef=db.collection('participants').doc(selectedPlayer.uid),dateKey=bangkokDateKey(),completionId=completionDocumentId(dateKey,'risk','win'),completionRef=participantRef.collection('activityCompletions').doc(completionId);
+    if(!validRoundId(roundId))throw new Error('invalid-round-id');
+    const participantRef=db.collection('participants').doc(selectedPlayer.uid),dateKey=bangkokDateKey(),joinCompletionId=completionDocumentId(dateKey,'risk','join',roundId),joinCompletionRef=participantRef.collection('activityCompletions').doc(joinCompletionId),completionId=completionDocumentId(dateKey,'risk','win',roundId),completionRef=participantRef.collection('activityCompletions').doc(completionId);
     return db.runTransaction(async transaction=>{
-        const participantSnap=await transaction.get(participantRef),completionSnap=await transaction.get(completionRef);
-        if(!participantSnap.exists)throw new Error('participant-not-found');
-        if(completionSnap.exists)return {alreadyRecorded:true};
+        const completionSnap=await transaction.get(completionRef);if(completionSnap.exists)return {alreadyRecorded:true};const joinCompletionSnap=await transaction.get(joinCompletionRef);if(!joinCompletionSnap.exists)throw new Error('round-join-required');const participantSnap=await transaction.get(participantRef);if(!participantSnap.exists)throw new Error('participant-not-found');
         const data=participantSnap.data()||{},state=data.state||{},wins=Array.isArray(state.wins)?state.wins:[],history=Array.isArray(state.scanHistory)?state.scanHistory:[];
-        const nextWins=wins.includes('risk')?wins:[...wins,'risk'],nextHistory=[...history,{action:'win:risk',activityId:'risk',type:'win',dateKey,source:'admin-game',adminUid:adminUser.uid,scannedAt:new Date().toISOString()}],currentScores=data.scores||scoresForState(state),participationPoints=Number(currentScores.participationPoints||0),winnerPoints=Number(currentScores.winnerPoints||0)+20,scores={participationPoints,winnerPoints,totalPoints:participationPoints+winnerPoints,lastCompletionId:completionId};
-        transaction.set(completionRef,{completionId,userId:selectedPlayer.uid,dateKey,activityId:'risk',type:'win',points:20,source:'admin-game',adminUid:adminUser.uid,completedAt:serverTimestamp()});
+        const nextWins=wins.includes('risk')?wins:[...wins,'risk'],nextHistory=[...history,{action:'win:risk',activityId:'risk',type:'win',dateKey,completionId,roundId,source:'admin-game',adminUid:adminUser.uid,scannedAt:new Date().toISOString()}],currentScores=data.scores||scoresForState(state),participationPoints=Number(currentScores.participationPoints||0),winnerPoints=Number(currentScores.winnerPoints||0)+20,scores={participationPoints,winnerPoints,totalPoints:participationPoints+winnerPoints,lastCompletionId:completionId};
+        transaction.set(completionRef,{completionId,userId:selectedPlayer.uid,dateKey,activityId:'risk',type:'win',points:20,roundId,source:'admin-game',adminUid:adminUser.uid,completedAt:serverTimestamp()});
         transaction.update(participantRef,{'state.wins':nextWins,'state.scanHistory':nextHistory,scores,updatedAt:serverTimestamp()});
         return {alreadyRecorded:false};
     });
@@ -508,10 +511,10 @@ async function startGame() {
     if(!selectedPlayer){setPlayerMessage('กรุณาตรวจสอบรหัสพนักงานก่อนเริ่มเกม','error');return}
     const button=document.getElementById('start-game-button');button.disabled=true;button.textContent='กำลังบันทึกการเข้าร่วม...';
     try{
-        await recordParticipation();
+        currentRoundId=createRoundId();await recordParticipation(currentRoundId);
         stopConfetti();selectedScenarios=getNext2Scenarios();currentQIndex=0;totalScore=0;timeLeft=300;gameFinishing=false;
         switchScreen('game-screen');startTimer();loadQuestion();
-    }catch(error){console.error(error);setPlayerMessage(error.message==='already-played-today'?'พนักงานรหัสนี้เล่นกิจกรรมนี้แล้วในวันนี้ กรุณากลับมาเล่นใหม่ในวันถัดไป':'บันทึกการเข้าร่วมไม่สำเร็จ กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่','error')}
+    }catch(error){currentRoundId=null;console.error(error);setPlayerMessage('บันทึกการเข้าร่วมไม่สำเร็จ กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่','error')}
     finally{button.disabled=false;button.textContent='เริ่มเล่นเกม'}
 }
 
@@ -804,7 +807,7 @@ async function finishGame() {
         playSound('applause');
         startConfetti();
         try{
-            const result=await recordWinner();
+            const result=await recordWinner(currentRoundId);
             syncStatus.textContent=result.alreadyRecorded?'ผู้เล่นท่านนี้ได้รับสิทธิ์ผู้ชนะใน E-Stamp แล้ว':'ได้รับสิทธิ์คูปองสำหรับผู้ชนะแล้ว สามารถตรวจสอบและหมุนลุ้นรางวัลได้ที่ E-Stamp ค่ะ';
         }catch(error){console.error(error);syncStatus.textContent='บันทึก Winner ไม่สำเร็จ กรุณาอย่าปิดหน้านี้และแจ้งเจ้าหน้าที่';playAgain.style.display='inline-block'}
     }
@@ -812,7 +815,7 @@ async function finishGame() {
 
 function resetGame() {
     stopConfetti();
-    selectedPlayer=null;document.getElementById('employee-code').value='';document.getElementById('start-game-button').disabled=true;setPlayerMessage('กรุณากรอกรหัสพนักงานสำหรับผู้เล่นรอบถัดไป');
+    selectedPlayer=null;currentRoundId=null;document.getElementById('employee-code').value='';document.getElementById('start-game-button').disabled=true;setPlayerMessage('กรุณากรอกรหัสพนักงานสำหรับผู้เล่นรอบถัดไป');
     switchScreen('start-screen');
 }
 

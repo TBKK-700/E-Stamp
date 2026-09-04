@@ -40,6 +40,35 @@ service cloud.firestore {
            == request.resource.data.scores.participationPoints + request.resource.data.scores.winnerPoints;
     }
 
+    function isLegacyCompletion(completionId) {
+      return completionId == request.resource.data.dateKey + "_" + request.resource.data.activityId + "_" + request.resource.data.type;
+    }
+
+    function isKahootRoundCompletion(completionId) {
+      return request.auth.uid == request.resource.data.userId
+        && request.resource.data.activityId == "kahoot"
+        && request.resource.data.type == "join"
+        && request.resource.data.points == 5
+        && request.resource.data.source == "quiz-room-qr"
+        && request.resource.data.roomCode is string
+        && request.resource.data.roomCode.matches("^[0-9]{6}$")
+        && completionId == request.resource.data.dateKey + "_kahoot_join_" + request.resource.data.roomCode;
+    }
+
+    function isRiskRoundCompletion(userId, completionId) {
+      return isAdmin()
+        && request.resource.data.activityId == "risk"
+        && request.resource.data.type in ["join", "win"]
+        && request.resource.data.source == "admin-game"
+        && request.resource.data.roundId is string
+        && request.resource.data.roundId.matches("^[0-9a-f]{32}$")
+        && completionId == request.resource.data.dateKey + "_risk_" + request.resource.data.type + "_" + request.resource.data.roundId
+        && (
+          request.resource.data.type == "join"
+          || exists(/databases/$(database)/documents/participants/$(userId)/activityCompletions/$(request.resource.data.dateKey + "_risk_join_" + request.resource.data.roundId))
+        );
+    }
+
     match /participants/{userId} {
       allow create: if signedIn()
                     && request.auth.uid == userId
@@ -78,7 +107,11 @@ service cloud.firestore {
                     && (request.auth.uid == userId || isAdmin())
                     && request.resource.data.userId == userId
                     && request.resource.data.completionId == completionId
-                    && completionId == request.resource.data.dateKey + "_" + request.resource.data.activityId + "_" + request.resource.data.type
+                    && (
+                      isLegacyCompletion(completionId)
+                      || isKahootRoundCompletion(completionId)
+                      || isRiskRoundCompletion(userId, completionId)
+                    )
                     && request.resource.data.dateKey.matches("^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
                     && validActivityPoints(request.resource.data.activityId, request.resource.data.type, request.resource.data.points)
                     && request.resource.data.completedAt == request.time
